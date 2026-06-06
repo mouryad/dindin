@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   TextInput,
+  Alert,
   StyleSheet,
   TouchableOpacity,
   KeyboardAvoidingView,
@@ -33,7 +34,7 @@ export function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]    = useState<string | null>(null);
 
   // Card entrance
   const cardY = useSharedValue(30);
@@ -71,6 +72,13 @@ export function AuthScreen() {
     cardY.value = withSpring(0, { damping: 18 }, () => {});
     cardY.value = 12;
     cardY.value = withSpring(0, { damping: 18 });
+  }
+
+  async function handleGoogle() {
+    Alert.alert(
+      'Coming soon',
+      'Google sign-in requires a native build. Sign in with email and password for now.',
+    );
   }
 
   async function handleSubmit() {
@@ -127,6 +135,24 @@ export function AuthScreen() {
 
           {/* Auth card */}
           <Animated.View style={[styles.card, cardStyle]}>
+            {/* Google sign-in */}
+            <TouchableOpacity
+              onPress={handleGoogle}
+              disabled={loading}
+              style={styles.googleBtn}
+              activeOpacity={0.85}
+            >
+              <DinText style={styles.googleLogo}>G</DinText>
+              <DinText style={styles.googleLabel}>Continue with Google</DinText>
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <DinText style={styles.dividerText}>or</DinText>
+              <View style={styles.dividerLine} />
+            </View>
+
             {/* Mode toggle */}
             <View style={styles.modeRow}>
               <ModeChip
@@ -377,5 +403,46 @@ const styles = StyleSheet.create({
   finePrint: {
     textAlign: 'center',
     lineHeight: 20,
+  },
+
+  // Google button
+  googleBtn: {
+    height: 54,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.paleGoldMedium,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderWidth: 1.5,
+    borderColor: Colors.paleGoldMedium,
+  },
+  googleLogo: {
+    fontFamily: FontFamily.frauncesBold,
+    fontSize: 22,
+    color: '#4285F4',
+    lineHeight: 26,
+  },
+  googleLabel: {
+    fontFamily: FontFamily.soraSemibold,
+    fontSize: 15,
+    color: Colors.textPrimary,
+  },
+
+  // Divider
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.paleGoldMedium,
+  },
+  dividerText: {
+    fontFamily: FontFamily.sora,
+    fontSize: 12,
+    color: Colors.textMuted,
   },
 });

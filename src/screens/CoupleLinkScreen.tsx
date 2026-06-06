@@ -126,6 +126,18 @@ export function CoupleLinkScreen({ onLinked }: CoupleLinkScreenProps) {
               desc="Partner already sent you one?"
               onPress={() => { setView('join'); cardScale.value = 0.92; cardOp.value = 0; }}
             />
+
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <DinText variant="caption" color={Colors.textMuted}>or</DinText>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity onPress={onLinked} style={styles.soloBtn} activeOpacity={0.7}>
+              <DinText variant="caption" color={Colors.textSecondary} style={styles.soloBtnText}>
+                Continue solo for now
+              </DinText>
+            </TouchableOpacity>
           </Animated.View>
         )}
 
@@ -337,5 +349,12 @@ const styles = StyleSheet.create({
 
   backLink: {
     alignSelf: 'center',
+  },
+  soloBtn: {
+    alignSelf: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  soloBtnText: {
+    textDecorationLine: 'underline',
   },
 });

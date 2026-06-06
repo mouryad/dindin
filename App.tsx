@@ -1,6 +1,10 @@
 import 'react-native-url-polyfill/auto';
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import Animated, {
+  useSharedValue, useAnimatedStyle, withSpring, withSequence,
+} from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -20,14 +24,17 @@ import {
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { useCouple } from './src/hooks/useCouple';
+import { useRecipeQueue } from './src/hooks/useRecipeQueue';
 import { requestNotificationPermissions } from './src/services/notifications';
+import { scheduleDailyMealNotifications } from './src/services/mealNotifications';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { DailyQuoteScreen } from './src/screens/DailyQuoteScreen';
 import { CoupleLinkScreen } from './src/screens/CoupleLinkScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { CalendarScreen } from './src/screens/CalendarScreen';
 import { ProgressScreen } from './src/screens/ProgressScreen';
-import { InventoryScreen } from './src/screens/InventoryScreen';
+import { GroceryScreen } from './src/screens/GroceryScreen';
+import { RecipeQueueScreen } from './src/screens/RecipeQueueScreen';
 import { DinText } from './src/components/ui/DinText';
 import { Colors, FontFamily } from './src/constants/theme';
 
@@ -35,41 +42,68 @@ import { Colors, FontFamily } from './src/constants/theme';
 SplashScreen.preventAutoHideAsync().catch(() => {});
 SplashScreen.setOptions({ fade: true, duration: 600 });
 
-type Tab = 'home' | 'fridge' | 'progress' | 'calendar';
+type Tab = 'home' | 'recipes' | 'progress' | 'grocery' | 'calendar';
 
 const TABS: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'home',     label: 'Today',    icon: '🏠' },
-  { id: 'fridge',   label: 'Fridge',   icon: '🧊' },
+  { id: 'recipes',  label: 'Recipes',  icon: '🎬' },
   { id: 'progress', label: 'Progress', icon: '📊' },
-  { id: 'calendar', label: 'Our Story', icon: '📅' },
+  { id: 'grocery',  label: 'Pantry',   icon: '🛒' },
+  { id: 'calendar', label: 'Story',    icon: '📅' },
 ];
 
 function TabBar({ active, onPress }: { active: Tab; onPress: (t: Tab) => void }) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+    <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
       {TABS.map((tab) => (
-        <TouchableOpacity
+        <TabItem
           key={tab.id}
-          onPress={() => onPress(tab.id)}
-          style={styles.tabItem}
-          activeOpacity={0.7}
-        >
-          <DinText style={[styles.tabIcon, active === tab.id && styles.tabIconActive]}>
-            {tab.icon}
-          </DinText>
-          <DinText style={[styles.tabLabel, active === tab.id && styles.tabLabelActive]}>
-            {tab.label}
-          </DinText>
-        </TouchableOpacity>
+          tab={tab}
+          isActive={active === tab.id}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            onPress(tab.id);
+          }}
+        />
       ))}
     </View>
+  );
+}
+
+function TabItem({
+  tab, isActive, onPress,
+}: { tab: { id: Tab; label: string; icon: string }; isActive: boolean; onPress: () => void }) {
+  const scale = useSharedValue(1);
+  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  function handlePress() {
+    scale.value = withSequence(
+      withSpring(0.93, { damping: 18, stiffness: 300 }),
+      withSpring(1.0,  { damping: 20, stiffness: 220 }),
+    );
+    onPress();
+  }
+
+  return (
+    <TouchableOpacity onPress={handlePress} style={styles.tabItem} activeOpacity={1}>
+      <Animated.View style={[styles.tabItemInner, animStyle]}>
+        <View style={[styles.tabDot, isActive && styles.tabDotActive]} />
+        <DinText style={[styles.tabIcon, isActive && styles.tabIconActive]}>
+          {tab.icon}
+        </DinText>
+        <DinText style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+          {tab.label}
+        </DinText>
+      </Animated.View>
+    </TouchableOpacity>
   );
 }
 
 function RootNavigator() {
   const { profile, user, loading } = useAuth();
   const { couple, loading: coupleLoading } = useCouple();
+  const { recipes } = useRecipeQueue();
 
   const [onboardingDone, setOnboardingDone] = useState(false);
   const [quoteDismissed, setQuoteDismissed] = useState(false);
@@ -80,6 +114,16 @@ function RootNavigator() {
   useEffect(() => {
     if (user) requestNotificationPermissions().catch(() => {});
   }, [user]);
+
+  // Schedule daily meal notifications (refreshed each session with latest queue)
+  useEffect(() => {
+    if (!user || !profile) return;
+    scheduleDailyMealNotifications({
+      dietaryRestrictions: profile.dietary_restrictions ?? [],
+      allergies: profile.allergies ?? [],
+      savedRecipes: recipes,
+    }).catch(() => {});
+  }, [user, profile, recipes]);
 
   if (loading || coupleLoading) {
     return (
@@ -122,13 +166,9 @@ function RootNavigator() {
     <View style={styles.appRoot}>
       <View style={styles.screenArea}>
         {activeTab === 'home'     && <HomeScreen />}
-        {activeTab === 'fridge'   && coupleId && user && (
-          <InventoryScreen coupleId={coupleId} userId={user.id} />
-        )}
-        {activeTab === 'fridge'   && !coupleId && (
-          <CoupleLinkScreen onLinked={() => setActiveTab('fridge')} />
-        )}
+        {activeTab === 'recipes'  && <RecipeQueueScreen />}
         {activeTab === 'progress' && <ProgressScreen />}
+        {activeTab === 'grocery'  && <GroceryScreen />}
         {activeTab === 'calendar' && <CalendarScreen />}
       </View>
       <TabBar active={activeTab} onPress={setActiveTab} />
@@ -185,11 +225,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.paleGoldLight,
     borderTopWidth: 1,
     borderTopColor: Colors.paleGoldMedium,
-    paddingTop: 10,
+    paddingTop: 6,
   },
-  tabItem: { flex: 1, alignItems: 'center', gap: 3 },
-  tabIcon:        { fontSize: 20, opacity: 0.4 },
-  tabIconActive:  { opacity: 1 },
+  tabItem: { flex: 1, alignItems: 'center' },
+  tabItemInner: { alignItems: 'center', gap: 2, paddingVertical: 4 },
+  tabDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: 'transparent', marginBottom: 1 },
+  tabDotActive: { backgroundColor: Colors.deepGreen },
+  tabIcon: { fontSize: 20, opacity: 0.35 },
+  tabIconActive: { fontSize: 24, opacity: 1 },
   tabLabel: {
     fontFamily: FontFamily.sora,
     fontSize: 10,
@@ -198,6 +241,7 @@ const styles = StyleSheet.create({
   },
   tabLabelActive: {
     fontFamily: FontFamily.soraSemibold,
+    fontSize: 11,
     color: Colors.deepGreen,
   },
 });

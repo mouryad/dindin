@@ -16,6 +16,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useCamera } from '@hooks/useCamera';
 import { CameraModeSwitcher } from '@components/camera/CameraModeSwitcher';
+import type { CameraMode } from '@services/aiVision';
 import { ShutterButton } from '@components/camera/ShutterButton';
 import { AnalysisLoadingOverlay } from '@components/camera/AnalysisLoadingOverlay';
 import { DinText } from '@components/ui/DinText';
@@ -24,13 +25,18 @@ import type { AiMealAnalysis } from '@db/database';
 import type { FridgeScanResult, WasteScanResult } from '@services/aiVision';
 
 interface CameraScreenProps {
-  onMealCaptured: (uri: string, analysis: AiMealAnalysis) => void;
-  onFridgeCaptured: (uri: string, result: FridgeScanResult) => void;
+  onMealCaptured?: (uri: string, analysis: AiMealAnalysis) => void;
+  onFridgeCaptured?: (uri: string, result: FridgeScanResult) => void;
   onWasteCaptured?: (uri: string, result: WasteScanResult) => void;
   onClose: () => void;
+  initialMode?: CameraMode;
+  showModeSwitcher?: boolean;
 }
 
-export function CameraScreen({ onMealCaptured, onFridgeCaptured, onWasteCaptured, onClose }: CameraScreenProps) {
+export function CameraScreen({
+  onMealCaptured, onFridgeCaptured, onWasteCaptured, onClose,
+  initialMode = 'meal', showModeSwitcher = false,
+}: CameraScreenProps) {
   const {
     permission,
     requestPermission,
@@ -47,18 +53,22 @@ export function CameraScreen({ onMealCaptured, onFridgeCaptured, onWasteCaptured
     fridgeResult,
     wasteResult,
     errorMessage,
+    retryCount,
     takePicture,
     pickFromGallery,
     retake,
-  } = useCamera();
+  } = useCamera(initialMode);
+
+  // Suggest flash after 2 failed attempts with flash off
+  const suggestFlash = retryCount >= 2 && flash === 'off' && mode === 'meal';
 
   // Once analysis is done, hand off to parent
   React.useEffect(() => {
     if (captureState === 'done' && capturedUri) {
       if (mode === 'meal' && mealAnalysis) {
-        onMealCaptured(capturedUri, mealAnalysis);
+        onMealCaptured?.(capturedUri, mealAnalysis);
       } else if (mode === 'fridge' && fridgeResult) {
-        onFridgeCaptured(capturedUri, fridgeResult);
+        onFridgeCaptured?.(capturedUri, fridgeResult);
       } else if (mode === 'waste' && wasteResult) {
         onWasteCaptured?.(capturedUri, wasteResult);
       }
@@ -101,10 +111,28 @@ export function CameraScreen({ onMealCaptured, onFridgeCaptured, onWasteCaptured
           {/* Error state */}
           {captureState === 'error' && (
             <View style={styles.errorOverlay}>
-              <DinText style={styles.errorText}>{errorMessage ?? 'Analysis failed'}</DinText>
-              <TouchableOpacity onPress={retake} style={styles.retakeBtn}>
-                <DinText style={styles.retakeBtnLabel}>Try again</DinText>
-              </TouchableOpacity>
+              <View style={styles.errorCard}>
+                <DinText style={styles.errorEmoji}>
+                  {(errorMessage ?? '').includes('not') || (errorMessage ?? '').includes('no food')
+                    ? '🙈' : '📸'}
+                </DinText>
+                <DinText style={styles.errorMessage}>
+                  {errorMessage ?? 'Analysis failed — please try again.'}
+                </DinText>
+                <View style={styles.errorActions}>
+                  {suggestFlash && (
+                    <TouchableOpacity
+                      onPress={() => { toggleFlash(); retake(); }}
+                      style={styles.flashSuggestBtn}
+                    >
+                      <DinText style={styles.flashSuggestText}>⚡ Try with flash</DinText>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity onPress={retake} style={styles.retakeBtn}>
+                    <DinText style={styles.retakeBtnLabel}>📷  Retake</DinText>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
           )}
         </View>
@@ -116,31 +144,36 @@ export function CameraScreen({ onMealCaptured, onFridgeCaptured, onWasteCaptured
           facing={facing}
           flash={flash}
         >
-          {/* Top controls */}
-          <SafeAreaView style={styles.topControls}>
-            <TouchableOpacity onPress={onClose} style={styles.iconBtn}>
-              <DinText style={styles.iconBtnText}>✕</DinText>
-            </TouchableOpacity>
-            <CameraModeSwitcher mode={mode} onChange={setMode} />
-            <TouchableOpacity onPress={toggleFlash} style={styles.iconBtn}>
-              <DinText style={styles.iconBtnText}>
-                {flash === 'off' ? '⚡' : flash === 'on' ? '⚡' : '⚡A'}
-              </DinText>
-              {flash === 'off' && (
-                <View style={styles.flashOffLine} />
-              )}
-            </TouchableOpacity>
+          {/* Top controls — two rows */}
+          <SafeAreaView style={styles.topSafe}>
+            {/* Row 1: close + flash */}
+            <View style={styles.topBar}>
+              <TouchableOpacity onPress={onClose} style={styles.iconBtn}>
+                <DinText style={styles.iconBtnText}>✕</DinText>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={toggleFlash} style={styles.iconBtn}>
+                <DinText style={styles.iconBtnText}>
+                  {flash === 'on' ? '⚡' : flash === 'auto' ? '⚡A' : '⚡'}
+                </DinText>
+                {flash === 'off' && <View style={styles.flashOffLine} />}
+              </TouchableOpacity>
+            </View>
+
+            {/* Row 2: mode switcher (only when shown) */}
+            {showModeSwitcher && (
+              <View style={styles.modeBar}>
+                <CameraModeSwitcher mode={mode} onChange={setMode} />
+              </View>
+            )}
           </SafeAreaView>
 
           {/* Mode hint */}
           <View style={styles.hintWrap}>
             <View style={styles.hintPill}>
               <DinText style={styles.hintText}>
-                {mode === 'meal'
-                  ? 'Photograph your meal — plate, bowl, or dish'
-                  : mode === 'fridge'
+                {mode === 'fridge'
                   ? 'Open your fridge and photograph the contents'
-                  : 'Photograph uneaten food or leftovers to track waste'}
+                  : 'Photograph your meal — plate, bowl, or dish'}
               </DinText>
             </View>
           </View>
@@ -203,12 +236,19 @@ const styles = StyleSheet.create({
     color: Colors.paleGoldLight,
   },
   // Top controls
-  topControls: {
+  topSafe: {
+    backgroundColor: 'transparent',
+  },
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingTop: Platform.OS === 'android' ? Spacing.xl : Spacing.sm,
+    paddingBottom: Spacing.sm,
+  },
+  modeBar: {
+    paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.sm,
   },
   iconBtn: {
@@ -295,10 +335,38 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
+  errorCard: {
+    backgroundColor: 'rgba(45,58,31,0.92)',
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.xl,
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginHorizontal: Spacing.lg,
+  },
+  errorEmoji: { fontSize: 48 },
+  errorMessage: {
+    fontFamily: FontFamily.sora,
+    fontSize: 15,
+    color: Colors.paleGoldLight,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  errorActions: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', justifyContent: 'center' },
+  flashSuggestBtn: {
+    backgroundColor: '#FFD700',
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: BorderRadius.full,
+  },
+  flashSuggestText: {
+    fontFamily: FontFamily.soraSemibold,
+    fontSize: 14,
+    color: Colors.deepGreen,
+  },
   retakeBtn: {
     backgroundColor: Colors.gold,
     paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingVertical: 11,
     borderRadius: BorderRadius.full,
   },
   retakeBtnLabel: {

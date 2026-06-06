@@ -73,9 +73,11 @@ export interface CoupleWithProfiles extends Couple {
 // ────────────────────────────────────────────────────────────
 // INVENTORY
 // ────────────────────────────────────────────────────────────
+export type StockLevel = 'abundant' | 'low' | 'out';
+
 export interface InventoryItem {
   id: string;
-  couple_id: string;
+  couple_id: string | null;
   added_by_user_id: string;
   name: string;
   category: string | null;
@@ -87,11 +89,13 @@ export interface InventoryItem {
   photo_url: string | null;
   notes: string | null;
   is_depleted: boolean;
+  stock_level: StockLevel;
   created_at: string;
   updated_at: string;
 }
 
-export type InventoryItemInsert = Omit<InventoryItem, 'id' | 'created_at' | 'updated_at' | 'is_depleted'>;
+export type InventoryItemInsert = Omit<InventoryItem, 'id' | 'created_at' | 'updated_at' | 'is_depleted' | 'stock_level'>
+  & { stock_level?: StockLevel };
 export type InventoryItemUpdate = Partial<Omit<InventoryItem, 'id' | 'couple_id' | 'added_by_user_id' | 'created_at'>>;
 
 // ────────────────────────────────────────────────────────────

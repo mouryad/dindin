@@ -126,6 +126,56 @@ export async function fetchPlaylistVideos(playlistId: string, maxResults = 20): 
 }
 
 // ────────────────────────────────────────────────────────────
+// Parse playlist ID from any YouTube URL
+// ────────────────────────────────────────────────────────────
+export function parseYouTubePlaylistId(url: string): string | null {
+  const m = url.match(/[?&]list=([A-Za-z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+// ────────────────────────────────────────────────────────────
+// Fetch all videos in a playlist (max 50 per call)
+// ────────────────────────────────────────────────────────────
+export async function fetchPlaylistItems(playlistId: string, maxResults = 50): Promise<YouTubeVideo[]> {
+  type Item = {
+    snippet: {
+      title: string; description: string; publishedAt: string; channelTitle: string;
+      thumbnails: { medium?: { url: string } };
+      resourceId: { videoId: string };
+    };
+  };
+  const data = await ytFetch<{ items: Item[] }>(
+    '/playlistItems',
+    { part: 'snippet', playlistId, maxResults: String(Math.min(maxResults, 50)) },
+  );
+
+  const validItems = data.items.filter((i) => i.snippet.resourceId.videoId !== 'deleted');
+  if (!validItems.length) return [];
+
+  const ids = validItems.map((i) => i.snippet.resourceId.videoId).join(',');
+  const details = await ytFetch<{ items: Array<{ id: string; contentDetails: { duration: string } }> }>(
+    '/videos', { part: 'contentDetails', id: ids },
+  );
+  const durMap: Record<string, string> = {};
+  details.items.forEach((i) => { durMap[i.id] = i.contentDetails.duration; });
+
+  return validItems.map((item) => {
+    const vid = item.snippet.resourceId.videoId;
+    const dur = durMap[vid] ?? '';
+    return {
+      videoId:         vid,
+      title:           item.snippet.title,
+      description:     item.snippet.description,
+      thumbnailUrl:    item.snippet.thumbnails.medium?.url ?? '',
+      channelTitle:    item.snippet.channelTitle,
+      duration:        dur,
+      durationSeconds: isoToSeconds(dur),
+      publishedAt:     item.snippet.publishedAt,
+    };
+  });
+}
+
+// ────────────────────────────────────────────────────────────
 // Fetch playlist metadata
 // ────────────────────────────────────────────────────────────
 export async function fetchPlaylistInfo(playlistId: string): Promise<YouTubePlaylist | null> {

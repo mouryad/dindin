@@ -8,7 +8,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "in.istudio.dindin"
+      "bundleIdentifier": "in.istudio.dindin",
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["whatsapp"]
+      }
     },
     "android": {
       "package": "in.istudio.dindin",
@@ -24,6 +27,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withShareExtension",
       "expo-router",
       "expo-status-bar",
       "expo-font",

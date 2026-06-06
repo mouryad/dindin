@@ -61,7 +61,7 @@ CREATE TABLE public.couples (
 -- ────────────────────────────────────────────────────────────
 CREATE TABLE public.inventory_items (
   id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  couple_id           UUID NOT NULL REFERENCES public.couples(id) ON DELETE CASCADE,
+  couple_id           UUID REFERENCES public.couples(id) ON DELETE CASCADE,  -- NULL for solo users
   added_by_user_id    UUID NOT NULL REFERENCES public.profiles(id),
   name                TEXT NOT NULL,
   category            TEXT,                     -- e.g. 'produce', 'dairy', 'meat'
@@ -257,9 +257,14 @@ CREATE POLICY "couples_insert" ON public.couples FOR INSERT
 CREATE POLICY "couples_update" ON public.couples FOR UPDATE
   USING (user_a_id = auth.uid() OR user_b_id = auth.uid());
 
--- Shared couple tables (inventory, waste, playlists, nudges)
-CREATE POLICY "inventory_couple_access" ON public.inventory_items FOR ALL
-  USING (couple_id = public.my_couple_id());
+-- Shared couple tables (waste, playlists, nudges)
+-- Inventory: couple items OR personal solo items
+CREATE POLICY "inventory_access" ON public.inventory_items FOR ALL
+  USING (
+    (couple_id IS NOT NULL AND couple_id = public.my_couple_id())
+    OR
+    (couple_id IS NULL AND added_by_user_id = auth.uid())
+  );
 CREATE POLICY "waste_couple_access" ON public.waste_logs FOR ALL
   USING (couple_id = public.my_couple_id());
 CREATE POLICY "playlists_couple_access" ON public.saved_playlists FOR ALL

@@ -3,6 +3,7 @@ import {
   View,
   ScrollView,
   TextInput,
+  Image,
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
@@ -12,6 +13,7 @@ import {
 import { supabase } from '@lib/supabase';
 import { useAuth } from '@context/AuthContext';
 import { useCouple } from '@hooks/useCouple';
+import { clearMealPlanCache } from '@hooks/useMealPlan';
 import { calculateDailyTargets } from '@lib/macroCalculator';
 import { ChipSelector } from '@components/onboarding/ChipSelector';
 import { NumberInput } from '@components/onboarding/NumberInput';
@@ -131,7 +133,9 @@ export function SettingsScreen({ onClose }: SettingsScreenProps) {
       }
 
       await refreshProfile();
-      Alert.alert('Saved', 'Your settings have been updated.');
+      // Invalidate meal plan cache so it regenerates with new dietary preferences
+      if (user?.id) await clearMealPlanCache(user.id).catch(() => {});
+      Alert.alert('Saved', 'Your settings have been updated. Your meal plan will refresh with your new preferences.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save changes');
     } finally {
@@ -188,6 +192,43 @@ export function SettingsScreen({ onClose }: SettingsScreenProps) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {/* ── PROFILE CARD ─────────────────────────────────── */}
+        <View style={styles.profileCard}>
+          {/* Avatar */}
+          {user?.user_metadata?.avatar_url ? (
+            <Image
+              source={{ uri: user.user_metadata.avatar_url as string }}
+              style={styles.profileAvatar}
+            />
+          ) : (
+            <View style={styles.profileAvatarFallback}>
+              <DinText style={styles.profileAvatarInitial}>
+                {profile?.display_name?.[0]?.toUpperCase() ?? '?'}
+              </DinText>
+            </View>
+          )}
+          <View style={styles.profileInfo}>
+            <DinText style={styles.profileName}>
+              {profile?.display_name ?? 'Your profile'}
+            </DinText>
+            <DinText variant="caption" color={Colors.textSecondary}>
+              {user?.email ?? ''}
+            </DinText>
+            {/* Auth provider badge */}
+            <View style={styles.providerBadge}>
+              {user?.app_metadata?.provider === 'google'
+                ? <DinText style={styles.providerText}>G  Google account</DinText>
+                : <DinText style={styles.providerText}>✉  Email account</DinText>
+              }
+            </View>
+          </View>
+        </View>
+
+        {/* ── SIGN OUT ─────────────────────────────────────── */}
+        <TouchableOpacity onPress={handleSignOut} style={styles.signOutBtn} activeOpacity={0.85}>
+          <DinText style={styles.signOutLabel}>Sign out</DinText>
+        </TouchableOpacity>
+
         {/* ── SECTION: YOUR PROFILE ────────────────────────── */}
         <SectionHeader label="Your profile" />
 
@@ -537,6 +578,70 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   closeBtnText: { fontSize: 15, color: Colors.textSecondary },
+
+  // Profile card
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    backgroundColor: Colors.paleGoldMedium,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+  },
+  profileAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.paleGoldMedium,
+  },
+  profileAvatarFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.deepGreen,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileAvatarInitial: {
+    fontFamily: FontFamily.frauncesBold,
+    fontSize: 28,
+    color: Colors.gold,
+  },
+  profileInfo: { flex: 1, gap: 3 },
+  profileName: {
+    fontFamily: FontFamily.frauncesBold,
+    fontSize: 20,
+    color: Colors.deepGreen,
+    lineHeight: 24,
+  },
+  providerBadge: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.paleGoldLight,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  providerText: {
+    fontFamily: FontFamily.soraSemibold,
+    fontSize: 11,
+    color: Colors.textSecondary,
+  },
+
+  // Sign out
+  signOutBtn: {
+    height: 50,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signOutLabel: {
+    fontFamily: FontFamily.soraSemibold,
+    fontSize: 15,
+    color: Colors.error,
+  },
 
   sectionHeader: {
     fontFamily: FontFamily.soraSemibold,

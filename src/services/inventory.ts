@@ -17,7 +17,7 @@ const CATEGORY_EXPIRY_DAYS: Record<string, number> = {
 };
 
 export async function bulkAddFromFridgeScan(params: {
-  coupleId: string;
+  coupleId: string | null;
   userId: string;
   ingredients: FridgeIngredient[];
   fridgePhotoUrl?: string;
@@ -26,11 +26,14 @@ export async function bulkAddFromFridgeScan(params: {
 
   // Check existing items to avoid duplicates
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: existing } = await (supabase as any)
+  let existingQuery = (supabase as any)
     .from('inventory_items')
     .select('name')
-    .eq('couple_id', coupleId)
-    .eq('is_depleted', false) as { data: Array<{ name: string }> | null };
+    .eq('is_depleted', false);
+  existingQuery = coupleId
+    ? existingQuery.eq('couple_id', coupleId)
+    : existingQuery.is('couple_id', null).eq('added_by_user_id', userId);
+  const { data: existing } = await existingQuery as { data: Array<{ name: string }> | null };
 
   const existingNames = new Set((existing ?? []).map((e) => e.name.toLowerCase()));
 
@@ -64,20 +67,23 @@ export async function bulkAddFromFridgeScan(params: {
   return { added: toInsert.length, skipped: ingredients.length - toInsert.length };
 }
 
-export async function getExpiringItems(coupleId: string, withinDays = 3): Promise<InventoryItem[]> {
+export async function getExpiringItems(coupleId: string | null, userId?: string, withinDays = 3): Promise<InventoryItem[]> {
   const targetDate = format(addDays(new Date(), withinDays), 'yyyy-MM-dd');
   const today = format(new Date(), 'yyyy-MM-dd');
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
+  let query = (supabase as any)
     .from('inventory_items')
     .select('*')
-    .eq('couple_id', coupleId)
     .eq('is_depleted', false)
     .not('expiry_date', 'is', null)
     .lte('expiry_date', targetDate)
     .gte('expiry_date', today)
-    .order('expiry_date') as { data: InventoryItem[] | null };
+    .order('expiry_date');
+  query = coupleId
+    ? query.eq('couple_id', coupleId)
+    : query.is('couple_id', null).eq('added_by_user_id', userId);
+  const { data } = await query as { data: InventoryItem[] | null };
 
   return data ?? [];
 }
@@ -90,14 +96,17 @@ export async function markItemDepleted(itemId: string): Promise<void> {
     .eq('id', itemId);
 }
 
-export async function getInventory(coupleId: string): Promise<InventoryItem[]> {
+export async function getInventory(coupleId: string | null, userId?: string): Promise<InventoryItem[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
+  let query = (supabase as any)
     .from('inventory_items')
     .select('*')
-    .eq('couple_id', coupleId)
     .eq('is_depleted', false)
-    .order('expiry_date', { ascending: true, nullsFirst: false }) as { data: InventoryItem[] | null };
+    .order('expiry_date', { ascending: true, nullsFirst: false });
+  query = coupleId
+    ? query.eq('couple_id', coupleId)
+    : query.is('couple_id', null).eq('added_by_user_id', userId);
+  const { data } = await query as { data: InventoryItem[] | null };
 
   return data ?? [];
 }

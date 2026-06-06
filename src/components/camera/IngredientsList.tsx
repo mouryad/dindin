@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, ScrollView, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -42,13 +42,13 @@ export function IngredientsList({
         {ingredients.length} items detected
       </DinText>
       <DinText variant="caption" color={Colors.textSecondary} style={styles.hint}>
-        Tap to select items to add to your shared inventory.
+        Tap to select · double-tap to edit name or quantity
       </DinText>
 
       <View style={styles.list}>
         {ingredients.map((ing, i) => (
           <IngredientRow
-            key={i}
+            key={`${ing.name}-${i}`}
             ingredient={ing}
             selected={selected.has(i)}
             onToggle={() => onToggle(i)}
@@ -82,15 +82,20 @@ function IngredientRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(ingredient);
+  const qtyRef = useRef<TextInput>(null);
+  const unitRef = useRef<TextInput>(null);
 
   const scale = useSharedValue(1);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   function handleToggle() {
-    scale.value = withSpring(0.95, { damping: 12 }, () => {
-      scale.value = withSpring(1);
-    });
+    scale.value = withSpring(0.95, { damping: 12 }, () => { scale.value = withSpring(1); });
     onToggle();
+  }
+
+  function startEditing() {
+    setDraft(ingredient);
+    setEditing(true);
   }
 
   function commitEdit() {
@@ -98,54 +103,83 @@ function IngredientRow({
     setEditing(false);
   }
 
+  function cancelEdit() {
+    setDraft(ingredient);
+    setEditing(false);
+  }
+
   return (
     <Animated.View style={animStyle}>
-      <TouchableOpacity
-        onPress={handleToggle}
-        onLongPress={() => setEditing(true)}
-        activeOpacity={0.85}
-        style={[styles.row, selected && styles.rowSelected]}
-      >
-        <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
-          {selected && <DinText style={styles.checkmark}>✓</DinText>}
+      {editing ? (
+        <View style={[styles.row, styles.rowSelected, styles.editingRow]}>
+          {/* Name row */}
+          <TextInput
+            value={draft.name}
+            onChangeText={(v) => setDraft((d) => ({ ...d, name: v }))}
+            style={styles.editInputFull}
+            autoFocus
+            returnKeyType="next"
+            onSubmitEditing={() => qtyRef.current?.focus()}
+            placeholder="Item name"
+            placeholderTextColor={Colors.textMuted}
+          />
+          {/* Qty + unit + actions row */}
+          <View style={styles.editSecondRow}>
+            <TextInput
+              ref={qtyRef}
+              value={draft.quantity}
+              onChangeText={(v) => setDraft((d) => ({ ...d, quantity: v }))}
+              style={styles.editInputQty}
+              keyboardType="numeric"
+              returnKeyType="next"
+              onSubmitEditing={() => unitRef.current?.focus()}
+              placeholder="Qty"
+              placeholderTextColor={Colors.textMuted}
+            />
+            <TextInput
+              ref={unitRef}
+              value={draft.unit}
+              onChangeText={(v) => setDraft((d) => ({ ...d, unit: v }))}
+              style={styles.editInputUnit}
+              returnKeyType="done"
+              onSubmitEditing={commitEdit}
+              placeholder="Unit"
+              placeholderTextColor={Colors.textMuted}
+            />
+            <TouchableOpacity onPress={cancelEdit} style={styles.editActionBtn}>
+              <DinText style={styles.editCancel}>✕</DinText>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={commitEdit} style={[styles.editActionBtn, styles.editConfirmBtn]}>
+              <DinText style={styles.editConfirm}>✓</DinText>
+            </TouchableOpacity>
+          </View>
         </View>
-        <DinText style={styles.categoryIcon}>
-          {CATEGORY_ICONS[ingredient.category] ?? CATEGORY_ICONS.other}
-        </DinText>
-        <View style={styles.rowBody}>
-          {editing ? (
-            <View style={styles.editRow}>
-              <TextInput
-                value={draft.name}
-                onChangeText={(v) => setDraft((d) => ({ ...d, name: v }))}
-                style={styles.editInput}
-                autoFocus
-                onBlur={commitEdit}
-                returnKeyType="done"
-                onSubmitEditing={commitEdit}
-              />
-              <TextInput
-                value={draft.quantity}
-                onChangeText={(v) => setDraft((d) => ({ ...d, quantity: v }))}
-                style={[styles.editInput, { width: 60 }]}
-                keyboardType="numeric"
-              />
-              <TextInput
-                value={draft.unit}
-                onChangeText={(v) => setDraft((d) => ({ ...d, unit: v }))}
-                style={[styles.editInput, { width: 50 }]}
-              />
-            </View>
-          ) : (
-            <>
-              <DinText variant="body">{ingredient.name}</DinText>
+      ) : (
+        <TouchableOpacity
+          onPress={handleToggle}
+          onLongPress={startEditing}
+          delayLongPress={300}
+          activeOpacity={0.85}
+          style={[styles.row, selected && styles.rowSelected]}
+        >
+          <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+            {selected && <DinText style={styles.checkmark}>✓</DinText>}
+          </View>
+          <DinText style={styles.categoryIcon}>
+            {CATEGORY_ICONS[ingredient.category] ?? CATEGORY_ICONS.other}
+          </DinText>
+          <View style={styles.rowBody}>
+            <DinText variant="body">{ingredient.name}</DinText>
+            {/* Tap quantity area to edit just the quantity */}
+            <TouchableOpacity onPress={startEditing} hitSlop={{ top: 6, bottom: 6, left: 0, right: 40 }}>
               <DinText variant="caption" color={Colors.textMuted}>
                 {ingredient.quantity} {ingredient.unit} · {ingredient.category}
               </DinText>
-            </>
-          )}
-        </View>
-      </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
+          <DinText style={styles.editHint}>✎</DinText>
+        </TouchableOpacity>
+      )}
     </Animated.View>
   );
 }
@@ -169,6 +203,11 @@ const styles = StyleSheet.create({
     borderColor: Colors.deepGreen,
     backgroundColor: Colors.paleGoldLight,
   },
+  editingRow: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 8,
+  },
   checkbox: {
     width: 22,
     height: 22,
@@ -189,15 +228,65 @@ const styles = StyleSheet.create({
   },
   categoryIcon: { fontSize: 20 },
   rowBody: { flex: 1, gap: 2 },
-  editRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
-  editInput: {
+  editHint: {
+    fontSize: 14,
+    color: Colors.textMuted,
+    opacity: 0.6,
+  },
+  // Editing state
+  editInputFull: {
+    fontFamily: FontFamily.sora,
+    fontSize: 15,
+    color: Colors.deepGreen,
+    borderBottomWidth: 1.5,
+    borderBottomColor: Colors.gold,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  editSecondRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  editInputQty: {
+    width: 64,
+    fontFamily: FontFamily.sora,
+    fontSize: 14,
+    color: Colors.deepGreen,
+    borderBottomWidth: 1.5,
+    borderBottomColor: Colors.gold,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+    textAlign: 'center',
+  },
+  editInputUnit: {
     flex: 1,
     fontFamily: FontFamily.sora,
     fontSize: 14,
     color: Colors.deepGreen,
-    borderBottomWidth: 1,
+    borderBottomWidth: 1.5,
     borderBottomColor: Colors.gold,
-    paddingVertical: 2,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  editActionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.paleGoldMedium,
+  },
+  editConfirmBtn: {
+    backgroundColor: Colors.deepGreen,
+  },
+  editCancel: {
+    fontSize: 14,
+    color: Colors.textMuted,
+  },
+  editConfirm: {
+    fontSize: 14,
+    color: Colors.paleGoldLight,
   },
   recipesSection: { gap: Spacing.sm },
   recipeChip: {

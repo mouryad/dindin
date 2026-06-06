@@ -1,77 +1,65 @@
 import React from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
-import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { DinText } from '@components/ui/DinText';
 import { Colors, FontFamily, BorderRadius } from '@constants/theme';
 import type { CameraMode } from '@services/aiVision';
 
-interface CameraModeSwitcherProps {
+interface Props {
   mode: CameraMode;
   onChange: (m: CameraMode) => void;
 }
 
 const MODES: Array<{ value: CameraMode; label: string; icon: string }> = [
-  { value: 'meal',   label: 'Meal',  icon: '🍽' },
+  { value: 'meal',   label: 'Meal',   icon: '🍽' },
   { value: 'fridge', label: 'Fridge', icon: '🧊' },
-  { value: 'waste',  label: 'Waste', icon: '🗑️' },
 ];
 
-export function CameraModeSwitcher({ mode, onChange }: CameraModeSwitcherProps) {
+export function CameraModeSwitcher({ mode, onChange }: Props) {
   return (
     <View style={styles.container}>
-      {MODES.map((m) => (
-        <ModeTab key={m.value} item={m} active={mode === m.value} onPress={() => onChange(m.value)} />
-      ))}
+      {MODES.map((m) => {
+        const active = mode === m.value;
+        return (
+          <TouchableOpacity
+            key={m.value}
+            onPress={() => onChange(m.value)}
+            style={[styles.tab, active && styles.tabActive]}
+            activeOpacity={0.8}
+          >
+            <DinText style={styles.icon}>{m.icon}</DinText>
+            <DinText style={[styles.label, active && styles.labelActive]}>
+              {m.label}
+            </DinText>
+          </TouchableOpacity>
+        );
+      })}
     </View>
-  );
-}
-
-function ModeTab({
-  item, active, onPress,
-}: { item: { value: CameraMode; label: string; icon: string }; active: boolean; onPress: () => void }) {
-  const animStyle = useAnimatedStyle(() => ({
-    backgroundColor: withSpring(
-      active ? 'rgba(244,241,232,0.95)' : 'rgba(244,241,232,0.12)',
-      { damping: 18 },
-    ),
-  }));
-
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={styles.tab}>
-      <Animated.View style={[styles.tabInner, animStyle]}>
-        <DinText style={styles.icon}>{item.icon}</DinText>
-        <DinText
-          style={[styles.label, active && styles.labelActive]}
-        >
-          {item.label}
-        </DinText>
-      </Animated.View>
-    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(45,58,31,0.75)',
     borderRadius: BorderRadius.full,
     padding: 4,
+    gap: 4,
   },
   tab: {
     flex: 1,
-  },
-  tabInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    gap: 7,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     borderRadius: BorderRadius.full,
   },
+  tabActive: {
+    backgroundColor: Colors.gold,
+  },
   icon: {
-    fontSize: 16,
+    fontSize: 17,
   },
   label: {
     fontFamily: FontFamily.soraSemibold,

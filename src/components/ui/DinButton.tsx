@@ -1,6 +1,7 @@
 import React from 'react';
-import { TouchableOpacity, StyleSheet, ActivityIndicator, ViewStyle } from 'react-native';
+import { ActivityIndicator, StyleSheet, ViewStyle } from 'react-native';
 import { DinText } from './DinText';
+import { PressableCard } from './PressableCard';
 import { Colors, FontFamily, BorderRadius } from '@constants/theme';
 
 interface DinButtonProps {
@@ -21,11 +22,11 @@ export function DinButton({
   style,
 }: DinButtonProps) {
   return (
-    <TouchableOpacity
+    <PressableCard
       onPress={onPress}
       disabled={disabled || loading}
-      activeOpacity={0.82}
-      style={[styles.base, styles[variant], (disabled || loading) && styles.disabled, style]}
+      scaleTo={0.96}
+      style={[styles.base, styles[variant], (disabled || loading) ? styles.disabled : undefined, style ?? {}] as any}
     >
       {loading ? (
         <ActivityIndicator color={variant === 'primary' ? Colors.paleGoldLight : Colors.deepGreen} size="small" />
@@ -39,7 +40,7 @@ export function DinButton({
           {label}
         </DinText>
       )}
-    </TouchableOpacity>
+    </PressableCard>
   );
 }
 
@@ -51,29 +52,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 32,
   },
-  primary: {
-    backgroundColor: Colors.deepGreen,
-  },
-  secondary: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: Colors.deepGreen,
-  },
-  ghost: {
-    backgroundColor: 'transparent',
-  },
-  disabled: {
-    opacity: 0.45,
-  },
-  label: {
-    fontSize: 16,
-    fontFamily: FontFamily.soraSemibold,
-    letterSpacing: 0.3,
-  },
-  labelPrimary: {
-    color: Colors.paleGoldLight,
-  },
-  labelSecondary: {
-    color: Colors.deepGreen,
-  },
+  primary:   { backgroundColor: Colors.deepGreen },
+  secondary: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: Colors.deepGreen },
+  ghost:     { backgroundColor: 'transparent' },
+  disabled:  { opacity: 0.45 },
+  label: { fontSize: 16, fontFamily: FontFamily.soraSemibold, letterSpacing: 0.3 },
+  labelPrimary:   { color: Colors.paleGoldLight },
+  labelSecondary: { color: Colors.deepGreen },
 });

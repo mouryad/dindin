@@ -31,7 +31,7 @@ const CATEGORY_ORDER = [
 type FilterTab = 'all' | 'expiring' | 'category';
 
 interface InventoryScreenProps {
-  coupleId: string;
+  coupleId: string | null;
   userId: string;
 }
 

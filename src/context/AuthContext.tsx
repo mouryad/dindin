@@ -10,6 +10,7 @@ interface AuthContextValue {
   loading: boolean;
   signUp: (email: string, password: string, displayName: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -50,7 +51,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { display_name: displayName } },
+      options: {
+        data: { display_name: displayName },
+        emailRedirectTo: 'dindin://',
+      },
     });
     if (error) throw error;
   }
@@ -58,6 +62,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+  }
+
+  async function signInWithGoogle() {
+    // Google OAuth requires a native development build — not available in Expo Go.
+    // Re-enable this once `eas build --profile development` is run and
+    // Google credentials are configured in Supabase.
+    throw new Error('Google sign-in requires a native build. Use email/password for now.');
   }
 
   async function signOut() {
@@ -77,6 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       signUp,
       signIn,
+      signInWithGoogle,
       signOut,
       refreshProfile,
     }}>

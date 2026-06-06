@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@lib/supabase';
+import { useAuth } from '@context/AuthContext';
 import { scheduleDailyBlinkitNudge } from '@services/notifications';
 import { differenceInDays, parseISO } from 'date-fns';
 import type { InventoryItem, InventoryItemInsert } from '@db/database';
@@ -26,21 +27,26 @@ function enrichItem(item: InventoryItem): InventoryItemRich {
 }
 
 export function useInventory(coupleId: string | null) {
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
   const [items, setItems] = useState<InventoryItemRich[]>([]);
   const [loading, setLoading] = useState(false);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const fetchItems = useCallback(async () => {
-    if (!coupleId) { setItems([]); return; }
+    if (!coupleId && !userId) { setItems([]); return; }
     setLoading(true);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    let query = (supabase as any)
       .from('inventory_items')
       .select('*')
-      .eq('couple_id', coupleId)
       .eq('is_depleted', false)
-      .order('expiry_date', { ascending: true, nullsFirst: false }) as { data: InventoryItem[] | null };
+      .order('expiry_date', { ascending: true, nullsFirst: false });
+    query = coupleId
+      ? query.eq('couple_id', coupleId)
+      : query.is('couple_id', null).eq('added_by_user_id', userId);
+    const { data } = await query as { data: InventoryItem[] | null };
 
     const rich = (data ?? []).map(enrichItem);
     setItems(rich);
@@ -48,32 +54,37 @@ export function useInventory(coupleId: string | null) {
 
     // Reschedule Blinkit nudge whenever inventory is refreshed
     scheduleDailyBlinkitNudge(data ?? []).catch(() => {});
-  }, [coupleId]);
+  }, [coupleId, userId]);
+
+  // Keep a stable ref so the subscription callback never goes stale
+  const fetchItemsRef = useRef(fetchItems);
+  useEffect(() => { fetchItemsRef.current = fetchItems; }, [fetchItems]);
 
   // Initial fetch
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
-  // Realtime subscription — keep inventory in sync across devices
+  // Realtime subscription — only re-subscribes when coupleId/userId changes,
+  // not when fetchItems recreates (avoids "cannot add callbacks after subscribe" error)
   useEffect(() => {
-    if (!coupleId) return;
+    if (!coupleId && !userId) return;
+
+    const channelKey = coupleId ? `inventory:${coupleId}` : `inventory:solo:${userId}`;
+    const filter = coupleId
+      ? `couple_id=eq.${coupleId}`
+      : `added_by_user_id=eq.${userId}`;
 
     const channel = supabase
-      .channel(`inventory:${coupleId}`)
+      .channel(channelKey)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'inventory_items',
-          filter: `couple_id=eq.${coupleId}`,
-        },
-        () => { fetchItems(); },
+        { event: '*', schema: 'public', table: 'inventory_items', filter },
+        () => { fetchItemsRef.current(); },
       )
       .subscribe();
 
     channelRef.current = channel;
     return () => { supabase.removeChannel(channel); };
-  }, [coupleId, fetchItems]);
+  }, [coupleId, userId, fetchItems]);
 
   async function addItem(insert: InventoryItemInsert): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

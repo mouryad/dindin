@@ -3,7 +3,6 @@ import { Alert } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
-import * as FileSystem from 'expo-file-system';
 import { analyzeMeal, scanFridge, analyzeWaste, type CameraMode, type FridgeScanResult, type WasteScanResult } from '@services/aiVision';
 import type { AiMealAnalysis } from '@db/database';
 
@@ -29,24 +28,26 @@ interface UseCameraReturn {
   fridgeResult: FridgeScanResult | null;
   wasteResult: WasteScanResult | null;
   errorMessage: string | null;
+  retryCount: number;
   takePicture: () => Promise<void>;
   pickFromGallery: () => Promise<void>;
   retake: () => void;
 }
 
-export function useCamera(): UseCameraReturn {
+export function useCamera(initialMode: CameraMode = 'meal'): UseCameraReturn {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
 
   const [facing, setFacing] = useState<'front' | 'back'>('back');
   const [flash, setFlash] = useState<'off' | 'on' | 'auto'>('off');
-  const [mode, setMode] = useState<CameraMode>('meal');
+  const [mode, setMode] = useState<CameraMode>(initialMode);
   const [captureState, setCaptureState] = useState<CaptureState>('idle');
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [mealAnalysis, setMealAnalysis] = useState<AiMealAnalysis | null>(null);
   const [fridgeResult, setFridgeResult] = useState<FridgeScanResult | null>(null);
   const [wasteResult, setWasteResult] = useState<WasteScanResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   function toggleFacing() {
     setFacing((f) => (f === 'back' ? 'front' : 'back'));
@@ -62,6 +63,10 @@ export function useCamera(): UseCameraReturn {
     try {
       if (mode === 'meal') {
         const result = await analyzeMeal(uri);
+        // Extra guard: if no dish name at all, reject regardless of other values
+        if (!result.dish_name?.trim()) {
+          throw new Error('NOT_RECOGNIZED');
+        }
         setMealAnalysis(result);
       } else if (mode === 'fridge') {
         const result = await scanFridge(uri);
@@ -73,8 +78,27 @@ export function useCamera(): UseCameraReturn {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setCaptureState('done');
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Analysis failed';
+      const raw = err instanceof Error ? err.message : 'Analysis failed';
+      let msg = raw;
+      if (raw === 'NOT_FOOD') {
+        const quips = [
+          "My food radar drew a blank 📡 That's not a meal — show me what's on your plate!",
+          "I see no food here! 🙈 Aim at your dish and snap again.",
+          "That's definitely not going on your calorie log 😄 Try pointing at your meal!",
+          "Hmm, my plate sensor disagrees 🤔 Is that food? I don't think so — reshoot!",
+        ];
+        msg = quips[Math.floor(Math.random() * quips.length)];
+      } else if (raw === 'NOT_RECOGNIZED') {
+        const quips = [
+          "Squinting really hard and still can't tell 🧐 Get a bit closer and try again!",
+          "My AI eyes are struggling here 👀 Better light and a closer shot should do it!",
+          "Blurry food = blurry calories 😅 Hold steady and reshoot!",
+          "Too dark for my taste 🌑 A touch more light and snap again!",
+        ];
+        msg = quips[Math.floor(Math.random() * quips.length)];
+      }
       setErrorMessage(msg);
+      setRetryCount((n) => n + 1);
       setCaptureState('error');
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
@@ -123,6 +147,7 @@ export function useCamera(): UseCameraReturn {
     setWasteResult(null);
     setErrorMessage(null);
     setCaptureState('idle');
+    // retryCount intentionally NOT reset so flash tip accumulates across retakes
   }
 
   return {
@@ -141,6 +166,7 @@ export function useCamera(): UseCameraReturn {
     fridgeResult,
     wasteResult,
     errorMessage,
+    retryCount,
     takePicture,
     pickFromGallery,
     retake,

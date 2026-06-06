@@ -40,7 +40,7 @@ const DEFAULT_EXPIRY: Record<string, number> = {
 
 interface AddItemSheetProps {
   visible: boolean;
-  coupleId: string;
+  coupleId: string | null;
   userId: string;
   onAdd: (item: InventoryItemInsert) => Promise<void>;
   onClose: () => void;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   ScrollView,
@@ -8,59 +8,53 @@ import {
   RefreshControl,
 } from 'react-native';
 import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
+  useAnimatedStyle, useSharedValue,
+  withSpring, withRepeat, withSequence, withTiming,
+  FadeInDown,
 } from 'react-native-reanimated';
+import { format } from 'date-fns';
 import { useProgress } from '@hooks/useProgress';
+import { useHealthData, ACTIVITY_TYPES } from '@hooks/useHealthData';
 import { CalorieRing } from '@components/progress/CalorieRing';
-import { LiquidMacroBar } from '@components/progress/LiquidMacroBar';
-import { StreakBadge } from '@components/progress/StreakBadge';
 import { WeightChart } from '@components/progress/WeightChart';
 import { WeightLogSheet } from '@components/progress/WeightLogSheet';
+import { WorkoutLogSheet } from '@components/progress/WorkoutLogSheet';
 import { MilestoneGrid } from '@components/progress/MilestoneCard';
 import { DinText } from '@components/ui/DinText';
-import { DinButton } from '@components/ui/DinButton';
 import { Colors, FontFamily, BorderRadius, Spacing } from '@constants/theme';
 
-const MACRO_COLORS = {
-  protein: '#4A7C59',
-  carbs:   Colors.gold,
-  fat:     '#C4874F',
-} as const;
+const ACTIVITY_ICON: Record<string, string> = Object.fromEntries(
+  ACTIVITY_TYPES.map((a) => [a.id, a.icon]),
+);
 
 export function ProgressScreen() {
   const {
-    profile,
-    macroProgress,
-    weightTrend,
-    milestones,
-    achievedCount,
-    totalMilestones,
-    logWeight,
-    weightSaving,
-    refresh,
+    profile, macroProgress, weightTrend, milestones,
+    achievedCount, totalMilestones, logWeight, weightSaving, refresh,
   } = useProgress();
 
-  const [weightSheetOpen, setWeightSheetOpen] = useState(false);
+  const { caloriesBurned, workouts, logWorkout, saving: workoutSaving, refresh: refreshHealth } = useHealthData();
+
+  const [weightSheetOpen,  setWeightSheetOpen]  = useState(false);
+  const [workoutSheetOpen, setWorkoutSheetOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   async function handleRefresh() {
     setRefreshing(true);
-    await refresh();
+    await Promise.all([refresh(), refreshHealth()]);
     setRefreshing(false);
   }
 
-  const targets = macroProgress?.targets ?? {
+  const consumed = macroProgress?.consumed ?? { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
+  const targets  = macroProgress?.targets  ?? {
     calories: profile?.daily_calorie_target ?? 2000,
     protein_g: profile?.daily_protein_g ?? 150,
-    carbs_g: profile?.daily_carbs_g ?? 200,
-    fat_g: profile?.daily_fat_g ?? 67,
+    carbs_g:   profile?.daily_carbs_g   ?? 200,
+    fat_g:     profile?.daily_fat_g     ?? 67,
   };
 
-  const consumed = macroProgress?.consumed ?? {
-    calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0,
-  };
+  const streak = profile?.cooking_streak ?? 0;
+  const today  = format(new Date(), 'EEEE, MMMM d');
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -69,147 +63,116 @@ export function ProgressScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={Colors.deepGreen}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.deepGreen} />
         }
       >
-        {/* Page title */}
-        <View style={styles.pageHeader}>
-          <DinText variant="heading" style={styles.pageTitle}>Your progress</DinText>
-          <DinText variant="body" color={Colors.textSecondary}>
-            {profile?.display_name ? `${profile.display_name}'s dashboard` : 'Personal dashboard'}
-          </DinText>
+        {/* ── HEADER ─────────────────────────────────────────── */}
+        <View style={styles.header}>
+          <View>
+            <DinText variant="heading" style={styles.name}>
+              {profile?.display_name ?? 'Progress'}
+            </DinText>
+            <DinText variant="caption" color={Colors.textSecondary}>{today}</DinText>
+          </View>
+          {/* Streak pill */}
+          <StreakPill streak={streak} />
         </View>
 
-        {/* ── Calorie ring ─────────────────────────────────── */}
-        <SectionCard>
-          <SectionLabel>Today's calories</SectionLabel>
+        {/* ── TODAY HERO (calorie ring) ───────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(60).springify().damping(18)}>
+        <View style={styles.heroCard}>
           <CalorieRing
             consumed={consumed.calories}
             target={targets.calories}
+            caloriesBurned={caloriesBurned}
             delay={100}
           />
-          <View style={{ height: 36 }} />  {/* space for the "remaining" label */}
-        </SectionCard>
+        </View>
 
-        {/* ── Liquid macro bars ─────────────────────────────── */}
-        <SectionCard>
+        </Animated.View>
+
+        {/* ── QUICK-ACTION ROW ───────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(120).springify().damping(18)}>
+        <View style={styles.quickRow}>
+          <TouchableOpacity style={styles.quickTile} onPress={() => setWeightSheetOpen(true)} activeOpacity={0.8}>
+            <DinText style={styles.quickTileEmoji}>⚖️</DinText>
+            <DinText style={styles.quickTileMetric}>
+              {weightTrend.latestKg != null ? `${weightTrend.latestKg.toFixed(1)} kg` : '–'}
+            </DinText>
+            <DinText style={styles.quickTileSub}>Weight</DinText>
+            <View style={styles.quickTileBtn}>
+              <DinText style={styles.quickTileBtnLabel}>+ Log</DinText>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.quickTile} onPress={() => setWorkoutSheetOpen(true)} activeOpacity={0.8}>
+            <DinText style={styles.quickTileEmoji}>
+              {workouts.length > 0 ? (ACTIVITY_ICON[workouts[workouts.length - 1].type] ?? '⚡') : '⚡'}
+            </DinText>
+            <DinText style={styles.quickTileMetric}>
+              {caloriesBurned > 0 ? `${caloriesBurned} kcal` : '–'}
+            </DinText>
+            <DinText style={styles.quickTileSub}>Activity</DinText>
+            <View style={styles.quickTileBtn}>
+              <DinText style={styles.quickTileBtnLabel}>+ Log</DinText>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        </Animated.View>
+
+        {/* ── MACROS ─────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(180).springify().damping(18)}>
+        <View style={styles.card}>
           <SectionLabel>Macros</SectionLabel>
-          <View style={styles.macroRow}>
-            <LiquidMacroBar
-              label="Protein"
-              consumed={consumed.protein_g}
-              target={targets.protein_g}
-              color={MACRO_COLORS.protein}
-              delay={0}
-            />
-            <LiquidMacroBar
-              label="Carbs"
-              consumed={consumed.carbs_g}
-              target={targets.carbs_g}
-              color={MACRO_COLORS.carbs}
-              delay={120}
-            />
-            <LiquidMacroBar
-              label="Fat"
-              consumed={consumed.fat_g}
-              target={targets.fat_g}
-              color={MACRO_COLORS.fat}
-              delay={240}
-            />
-          </View>
+          <MacroBar label="Protein" emoji="🥩" consumed={consumed.protein_g} target={targets.protein_g} color="#4A7C59" />
+          <MacroBar label="Carbs"   emoji="🍞" consumed={consumed.carbs_g}   target={targets.carbs_g}   color={Colors.gold} />
+          <MacroBar label="Fat"     emoji="🫙" consumed={consumed.fat_g}     target={targets.fat_g}     color="#C4874F" />
+        </View>
 
-          {/* Target row */}
-          <View style={styles.targetRow}>
-            <TargetPill label="P" value={`${targets.protein_g}g`} color={MACRO_COLORS.protein} />
-            <TargetPill label="C" value={`${targets.carbs_g}g`}   color={MACRO_COLORS.carbs} />
-            <TargetPill label="F" value={`${targets.fat_g}g`}     color={MACRO_COLORS.fat} />
-          </View>
-        </SectionCard>
+        </Animated.View>
 
-        {/* ── Streak ────────────────────────────────────────── */}
-        <SectionCard>
-          <SectionLabel>Cooking streak</SectionLabel>
-          <View style={styles.streakWrap}>
-            <StreakBadge
-              streak={profile?.cooking_streak ?? 0}
-              longestStreak={profile?.longest_streak ?? 0}
-            />
-          </View>
-          <DinText variant="caption" color={Colors.textMuted} style={styles.streakHint}>
-            {profile?.cooking_streak === 0
-              ? 'Log a meal today to start your streak!'
-              : 'Log a meal every day to keep it going.'}
-          </DinText>
-        </SectionCard>
-
-        {/* ── Weight trend ──────────────────────────────────── */}
-        <SectionCard>
-          <View style={styles.sectionHeaderRow}>
+        {/* ── WEIGHT TREND ───────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(240).springify().damping(18)}>
+        <View style={styles.card}>
+          <View style={styles.cardHeaderRow}>
             <SectionLabel>Weight</SectionLabel>
-            <TouchableOpacity
-              onPress={() => setWeightSheetOpen(true)}
-              style={styles.logWeightBtn}
-            >
-              <DinText style={styles.logWeightBtnLabel}>+ Log weight</DinText>
+            <TouchableOpacity onPress={() => setWeightSheetOpen(true)} style={styles.addBtn}>
+              <DinText style={styles.addBtnLabel}>+ Log</DinText>
             </TouchableOpacity>
           </View>
-
           <WeightChart
             trend={weightTrend}
             targetKg={profile?.target_weight_kg ?? null}
             goal={profile?.weight_goal ?? 'maintain'}
           />
-
-          {/* Goal summary */}
-          {profile?.target_weight_kg && (
-            <View style={styles.goalSummary}>
-              <DinText variant="caption" color={Colors.textSecondary}>
-                Goal: {profile.target_weight_kg} kg
-                ({profile.weight_goal === 'lose' ? 'weight loss' :
-                  profile.weight_goal === 'gain' ? 'muscle gain' : 'maintenance'})
-              </DinText>
-              {weightTrend.progressPct !== null && (
-                <LinearProgressBar
-                  pct={weightTrend.progressPct / 100}
-                  color={Colors.deepGreen}
-                />
-              )}
-            </View>
+          {profile?.target_weight_kg != null && (
+            <DinText variant="caption" color={Colors.textSecondary}>
+              {`Goal: ${profile.target_weight_kg} kg (${
+                profile.weight_goal === 'lose' ? 'weight loss' :
+                profile.weight_goal === 'gain' ? 'muscle gain' : 'maintenance'
+              })`}
+            </DinText>
           )}
-        </SectionCard>
+        </View>
 
-        {/* ── Milestones ────────────────────────────────────── */}
-        <SectionCard>
-          <View style={styles.sectionHeaderRow}>
+        </Animated.View>
+
+        {/* ── MILESTONES ─────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(300).springify().damping(18)}>
+        <View style={styles.card}>
+          <View style={styles.cardHeaderRow}>
             <SectionLabel>Milestones</SectionLabel>
             <DinText variant="caption" color={Colors.textSecondary}>
-              {achievedCount} / {totalMilestones}
+              {`${achievedCount} / ${totalMilestones}`}
             </DinText>
           </View>
           <MilestoneGrid milestones={milestones} />
-        </SectionCard>
-
-        {/* ── Wearable placeholder ──────────────────────────── */}
-        <SectionCard style={styles.wearableCard}>
-          <DinText style={styles.wearableIcon}>⌚</DinText>
-          <View style={{ flex: 1, gap: 4 }}>
-            <DinText variant="body" style={{ fontFamily: FontFamily.soraSemibold }}>
-              Connect a wearable
-            </DinText>
-            <DinText variant="caption" color={Colors.textSecondary}>
-              Apple Watch, Oura Ring, or Whoop — coming soon. Activity data will automatically
-              adjust your daily calorie budget in real time.
-            </DinText>
-          </View>
-        </SectionCard>
+        </View>
+        </Animated.View>
 
       </ScrollView>
 
-      {/* Weight log bottom sheet */}
       <WeightLogSheet
         visible={weightSheetOpen}
         lastWeightKg={weightTrend.latestKg ?? profile?.current_weight_kg ?? null}
@@ -217,37 +180,75 @@ export function ProgressScreen() {
         onSave={logWeight}
         onClose={() => setWeightSheetOpen(false)}
       />
+      <WorkoutLogSheet
+        visible={workoutSheetOpen}
+        weightKg={profile?.current_weight_kg ?? 70}
+        saving={workoutSaving}
+        onSave={logWorkout}
+        onClose={() => setWorkoutSheetOpen(false)}
+      />
     </SafeAreaView>
   );
 }
 
-// ─── Small reusable sub-components ───────────────────────────
+// ─── Sub-components ───────────────────────────────────────────
 
-function SectionCard({ children, style }: { children: React.ReactNode; style?: object }) {
-  return <View style={[styles.card, style]}>{children}</View>;
+function SectionLabel({ children }: { children: string }) {
+  return <DinText variant="label" style={styles.sectionLabel}>{children}</DinText>;
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <DinText variant="label" style={styles.sectionLabel}>{children as string}</DinText>;
-}
+function StreakPill({ streak }: { streak: number }) {
+  const scale = useSharedValue(1);
+  const anim  = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
-function TargetPill({ label, value, color }: { label: string; value: string; color: string }) {
+  // Gentle auto-pulse when active
+  useEffect(() => {
+    if (streak <= 0) return;
+    scale.value = withRepeat(
+      withSequence(
+        withTiming(1.0,  { duration: 1200 }),
+        withTiming(1.04, { duration: 900 }),
+        withTiming(1.0,  { duration: 900 }),
+        withTiming(1.0,  { duration: 2800 }),
+      ),
+      -1, false,
+    );
+  }, [streak]);
+
+  function pulse() {
+    scale.value = withSpring(1.15, { damping: 6 }, () => { scale.value = withSpring(1); });
+  }
+
   return (
-    <View style={[styles.targetPill, { borderColor: color }]}>
-      <DinText style={[styles.targetPillLabel, { color }]}>{label}</DinText>
-      <DinText variant="caption" color={Colors.textSecondary}>{value}</DinText>
-    </View>
+    <TouchableOpacity onPress={pulse} activeOpacity={0.9}>
+      <Animated.View style={[styles.streakPill, anim]}>
+        <DinText style={styles.streakFlame}>{streak >= 7 ? '🔥' : '✨'}</DinText>
+        <DinText style={styles.streakNum}>{streak}</DinText>
+        <DinText style={styles.streakLabel}>day{streak !== 1 ? 's' : ''}</DinText>
+      </Animated.View>
+    </TouchableOpacity>
   );
 }
 
-function LinearProgressBar({ pct, color }: { pct: number; color: string }) {
+
+function MacroBar({ label, emoji, consumed, target, color }: {
+  label: string; emoji: string; consumed: number; target: number; color: string;
+}) {
+  const pct = target > 0 ? Math.min(1, consumed / target) : 0;
   const width = useSharedValue(0);
   React.useEffect(() => { width.value = withSpring(pct, { damping: 18 }); }, [pct]);
   const barStyle = useAnimatedStyle(() => ({ width: `${width.value * 100}%` as unknown as number }));
 
   return (
-    <View style={styles.linearTrack}>
-      <Animated.View style={[styles.linearFill, { backgroundColor: color }, barStyle]} />
+    <View style={styles.macroBarRow}>
+      <DinText style={styles.macroBarEmoji}>{emoji}</DinText>
+      <DinText style={styles.macroBarLabel}>{label}</DinText>
+      <View style={styles.macroTrack}>
+        <Animated.View style={[styles.macroFill, { backgroundColor: color }, barStyle]} />
+      </View>
+      <DinText style={[styles.macroBarValue, { color }]}>
+        {`${Math.round(consumed)}g`}
+      </DinText>
     </View>
   );
 }
@@ -255,92 +256,149 @@ function LinearProgressBar({ pct, color }: { pct: number; color: string }) {
 // ─── Styles ──────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.paleGoldLight },
-  scroll: { flex: 1 },
+  safe:    { flex: 1, backgroundColor: Colors.paleGoldLight },
+  scroll:  { flex: 1 },
   content: { paddingHorizontal: Spacing.lg, paddingBottom: 120, gap: Spacing.md },
 
-  pageHeader: {
+  // Header
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingTop: Spacing.lg,
-    paddingBottom: Spacing.sm,
-    gap: 4,
   },
-  pageTitle: { fontSize: 30, lineHeight: 38 },
+  name: { fontSize: 26, lineHeight: 32 },
 
+  // Streak pill
+  streakPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.deepGreen,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  streakFlame: { fontSize: 16 },
+  streakNum: {
+    fontFamily: FontFamily.frauncesBold,
+    fontSize: 20,
+    color: Colors.paleGoldLight,
+    lineHeight: 24,
+  },
+  streakLabel: {
+    fontFamily: FontFamily.sora,
+    fontSize: 11,
+    color: Colors.paleGoldMedium,
+  },
+
+  // Hero ring card
+  heroCard: {
+    backgroundColor: Colors.paleGoldMedium,
+    borderRadius: BorderRadius.xl,
+    paddingVertical: Spacing.xl,
+    alignItems: 'center',
+  },
+
+  // Quick-action 2-column row
+  quickRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  quickTile: {
+    flex: 1,
+    backgroundColor: Colors.paleGoldMedium,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    paddingVertical: Spacing.lg,
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 100,
+    shadowColor: Colors.deepGreen,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 8, elevation: 1,
+  },
+  quickTileEmoji: { fontSize: 32 },
+  quickTileMetric: {
+    fontFamily: FontFamily.frauncesBold,
+    fontSize: 24,
+    color: Colors.deepGreen,
+    lineHeight: 28,
+  },
+  quickTileSub: {
+    fontFamily: FontFamily.sora,
+    fontSize: 11,
+    color: Colors.textMuted,
+  },
+  quickTileBtn: {
+    marginTop: 8,
+    backgroundColor: Colors.deepGreen,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 16,
+    paddingVertical: 5,
+  },
+  quickTileBtnLabel: {
+    fontFamily: FontFamily.soraSemibold,
+    fontSize: 12,
+    color: Colors.paleGoldLight,
+  },
+
+  // Generic card
   card: {
     backgroundColor: Colors.paleGoldMedium,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
-    gap: Spacing.md,
-  },
-  sectionLabel: { marginBottom: 4 },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  macroRow: {
-    flexDirection: 'row',
     gap: Spacing.sm,
+    shadowColor: Colors.deepGreen,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 8, elevation: 1,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: Spacing.sm,
-  },
-
-  targetRow: {
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-  },
-  targetPill: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    borderWidth: 1,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
   },
-  targetPillLabel: {
+  sectionLabel: { marginBottom: 2 },
+  addBtn: {
+    backgroundColor: Colors.deepGreen,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+  },
+  addBtnLabel: {
     fontFamily: FontFamily.soraSemibold,
     fontSize: 12,
-  },
-
-  streakWrap: { alignItems: 'center', paddingVertical: Spacing.sm },
-  streakHint: { textAlign: 'center' },
-
-  logWeightBtn: {
-    backgroundColor: Colors.deepGreen,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: BorderRadius.full,
-  },
-  logWeightBtnLabel: {
-    fontFamily: FontFamily.soraSemibold,
-    fontSize: 13,
     color: Colors.paleGoldLight,
   },
 
-  goalSummary: { gap: 8, marginTop: 4 },
-  linearTrack: {
-    height: 6,
+  // Compact macro bars
+  macroBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  macroBarEmoji: { fontSize: 16, width: 24, textAlign: 'center' },
+  macroBarLabel: {
+    fontFamily: FontFamily.soraSemibold,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    width: 48,
+  },
+  macroTrack: {
+    flex: 1,
+    height: 10,
     backgroundColor: Colors.paleGoldLight,
-    borderRadius: 3,
+    borderRadius: 5,
     overflow: 'hidden',
   },
-  linearFill: {
+  macroFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 4,
   },
-
-  wearableCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.md,
-    borderStyle: 'dashed',
-    borderWidth: 1.5,
-    borderColor: Colors.gold,
-    backgroundColor: 'transparent',
-    opacity: 0.85,
+  macroBarValue: {
+    fontFamily: FontFamily.soraSemibold,
+    fontSize: 12,
+    width: 40,
+    textAlign: 'right',
   },
-  wearableIcon: { fontSize: 28 },
 });
