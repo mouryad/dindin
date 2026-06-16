@@ -10,7 +10,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "in.istudio.dindin",
       "infoPlist": {
-        "LSApplicationQueriesSchemes": ["whatsapp"]
+        "LSApplicationQueriesSchemes": [
+          "whatsapp"
+        ]
       }
     },
     "android": {
@@ -21,7 +23,11 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -48,6 +54,13 @@
         }
       ]
     ],
-    "scheme": "dindin"
+    "scheme": "dindin",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "005d5512-5519-4305-b538-b5d8083a3664"
+      }
+    },
+    "owner": "mouryad"
   }
 }

@@ -42,7 +42,7 @@ export function HomeScreen() {
   const { profile, user } = useAuth();
   const { couple } = useCouple();
   const { meals, macroProgress, refresh } = useTodayMeals();
-  const { plan: mealPlan, loading: planLoading, error: planError, cuisine, selectCuisine, inventory: mealInventory, refresh: refreshPlan, replaceMealInPlan } = useMealPlan();
+  const { plan: mealPlan, loading: planLoading, error: planError, cuisine, selectCuisine, inventory: mealInventory, recipes: mealRecipes, refresh: refreshPlan, replaceMealInPlan } = useMealPlan();
 
   const [cameraFlow, setCameraFlow]       = useState<CameraFlow>('closed');
   const [manualSheetOpen, setManualSheetOpen] = useState(false);
@@ -152,6 +152,7 @@ export function HomeScreen() {
           error={planError}
           cuisine={cuisine}
           inventory={mealInventory}
+          recipes={mealRecipes}
           onCuisineChange={selectCuisine}
           onRefresh={refreshPlan}
           onUpdateMeal={replaceMealInPlan}

@@ -32,8 +32,9 @@ export async function generateMealPlan(params: {
   recipes: RecipeQueueItem[];
   cuisine?: string;
   likedMeals?: string[];
+  excludeMeals?: string[];
 }): Promise<MealPlan> {
-  const { profile, partnerProfile, inventory, recipes, cuisine = 'any', likedMeals = [] } = params;
+  const { profile, partnerProfile, inventory, recipes, cuisine = 'any', likedMeals = [], excludeMeals = [] } = params;
 
   const today = new Date();
   const dayLabels = [
@@ -53,7 +54,16 @@ export async function generateMealPlan(params: {
     ? Object.entries(byCategory).map(([c, items]) => `${c}: ${items.join(', ')}`).join('\n')
     : 'No inventory — assume a basic pantry (rice, pasta, eggs, oil, onion, garlic)';
 
-  const recipeHints = recipes.slice(0, 6).map((r) => r.title).join(', ') || 'none';
+  // Group saved recipes by meal category so the model can slot them in directly
+  const recipesByCategory: Record<string, string[]> = {};
+  recipes.forEach((r) => {
+    const cat = r.meal_category || 'any';
+    if (!recipesByCategory[cat]) recipesByCategory[cat] = [];
+    if (recipesByCategory[cat].length < 4) recipesByCategory[cat].push(r.title);
+  });
+  const recipeHints = Object.entries(recipesByCategory)
+    .map(([cat, titles]) => `${cat}: ${titles.join(', ')}`)
+    .join('\n') || 'none saved yet';
 
   const prompt = `You are a personal nutritionist. Create a personalised 3-day meal plan (breakfast, lunch, dinner each day).
 
@@ -66,7 +76,7 @@ USER:
 FRIDGE:
 ${fridgeText}
 
-SAVED RECIPES (style inspiration):
+SAVED RECIPES (user bookmarked these from videos/links — actively slot matching ones in as real meals, one per category at most across the 3 days, not just for inspiration):
 ${recipeHints}
 
 CUISINE PREFERENCE: ${cuisine === 'any' ? 'No preference — varied and balanced' : cuisine}
@@ -87,12 +97,16 @@ ${partnerProfile ? `PARTNER (${partnerProfile.display_name ?? 'Partner'}):
 FAVOURITES (user enjoyed these — suggest similar dishes or repeat occasionally):
 ${likedMeals.length > 0 ? likedMeals.slice(0, 10).join(', ') : 'none yet'}
 
+${excludeMeals.length > 0 ? `RECENTLY SUGGESTED (already shown to the user — do NOT repeat any of these, pick genuinely different dishes):
+${excludeMeals.slice(0, 24).join(', ')}
+` : ''}
 RULES:
 - Follow the cuisine preference for all meals if specified
 - 4 meals per day: breakfast (~20%), lunch (~30%), snack (~15%), dinner (~35%)
 - Snack must include a seasonal fruit (apple, banana, mango, etc.) + one light bite (nuts, yogurt, roasted seeds, etc.)
 - Prefer fridge ingredients; keep "missing" to 1–3 items per meal
 - Real, practical meals — not complex restaurant dishes
+- Vary the dishes meaningfully across days and refreshes — avoid defaulting to the same staples (e.g. dal chawal, poha, sabzi roti) every time unless they're the clear best fit
 - emoji = one food emoji that best represents the dish
 - prepNote: ONLY for dinner or lunch that genuinely needs advance prep (e.g. "Soak dal overnight", "Marinate chicken for 4 hrs", "Make dosa batter"). Leave empty "" for simple meals.
 
@@ -138,8 +152,9 @@ export async function refreshSingleMeal(params: {
   mealType: string;
   cuisine: string;
   exclude: string[];
+  recipes?: RecipeQueueItem[];
 }): Promise<SuggestedMeal> {
-  const { profile, inventory, mealType, cuisine, exclude } = params;
+  const { profile, inventory, mealType, cuisine, exclude, recipes = [] } = params;
 
   const fridgeItems = inventory.slice(0, 20).map((i) => i.name).join(', ') || 'basic pantry items';
   const calorieTarget =
@@ -148,13 +163,20 @@ export async function refreshSingleMeal(params: {
     mealType === 'snack'     ? Math.round((profile.daily_calorie_target ?? 2000) * 0.15) :
                                Math.round((profile.daily_calorie_target ?? 2000) * 0.35);
 
+  // Saved recipes matching this meal's category — offer as candidates, not exclusions
+  const matchingRecipes = recipes
+    .filter((r) => r.meal_category === mealType)
+    .map((r) => r.title)
+    .filter((title) => !exclude.includes(title))
+    .slice(0, 4);
+
   const prompt = `Suggest one ${mealType} meal.
 Cuisine: ${cuisine === 'any' ? 'any' : cuisine}
 Calories: ~${calorieTarget} kcal
 Dietary restrictions: ${profile.dietary_restrictions?.join(', ') || 'none'}
 Fridge: ${fridgeItems}
 Do NOT suggest: ${exclude.join(', ')}
-
+${matchingRecipes.length > 0 ? `User's saved ${mealType} recipes — prefer one of these if it fits: ${matchingRecipes.join(', ')}\n` : ''}
 Reply ONLY with JSON (no markdown):
 {"name":"","type":"${mealType}","calories":${calorieTarget},"emoji":"","have":[],"missing":[],"tip":""}`;
 

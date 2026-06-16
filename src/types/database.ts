@@ -62,6 +62,7 @@ export interface Couple {
   couple_name: string | null;
   invite_code: string;
   status: CoupleStatus;
+  cuisine_pref: string;
   created_at: string;
 }
 

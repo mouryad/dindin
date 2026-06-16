@@ -20,6 +20,8 @@ import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useRecipeQueue, type RecipeQueueItem } from '@hooks/useRecipeQueue';
 import { usePendingSharedUrls } from '@hooks/usePendingSharedUrls';
+import { useAuth } from '@context/AuthContext';
+import { useCouple } from '@hooks/useCouple';
 import { fetchUrlMeta, platformIcon as getPlatformIcon } from '@services/urlMetadata';
 import {
   searchRecipeVideos, fetchPlaylistItems, fetchPlaylistInfo,
@@ -52,6 +54,9 @@ type ScreenView = 'boards' | 'category' | 'search';
 export function RecipeQueueScreen() {
   const { recipes, loading, addRecipe, removeRecipe } = useRecipeQueue();
   const { pendingUrls, clear: clearPending } = usePendingSharedUrls();
+  const { user } = useAuth();
+  const { couple } = useCouple();
+  const partnerName = couple?.partner?.display_name ?? null;
 
   const [showAdd,      setShowAdd]      = useState(false);
   const [shareRecipe,  setShareRecipe]  = useState<RecipeQueueItem | null>(null);
@@ -200,6 +205,8 @@ export function RecipeQueueScreen() {
             <RecipeCard
               key={recipe.id}
               recipe={recipe}
+              currentUserId={user?.id}
+              partnerName={partnerName}
               onShare={() => setShareRecipe(recipe)}
               onOpen={() => recipe.url ? Linking.openURL(recipe.url) : null}
               onDelete={() => Alert.alert('Remove recipe?', recipe.title, [
@@ -224,6 +231,8 @@ export function RecipeQueueScreen() {
                 <RecipeCard
                   key={recipe.id}
                   recipe={recipe}
+                  currentUserId={user?.id}
+                  partnerName={partnerName}
                   onShare={() => setShareRecipe(recipe)}
                   onOpen={() => recipe.url ? Linking.openURL(recipe.url) : null}
                   onDelete={() => removeRecipe(recipe.id)}
@@ -379,9 +388,11 @@ function YouTubeResultCard({ video, onAdd }: { video: YouTubeVideo; onAdd: () =>
 // ─── Recipe card ──────────────────────────────────────────────
 
 function RecipeCard({
-  recipe, onShare, onOpen, onDelete,
+  recipe, currentUserId, partnerName, onShare, onOpen, onDelete,
 }: {
   recipe: RecipeQueueItem;
+  currentUserId?: string;
+  partnerName?: string | null;
   onShare: () => void;
   onOpen: () => void;
   onDelete: () => void;
@@ -389,6 +400,7 @@ function RecipeCard({
   const catInfo  = CATEGORIES.find((c) => c.value === recipe.meal_category) ?? CATEGORIES[4];
   const colors   = CAT_COLORS[recipe.meal_category] ?? CAT_COLORS.general;
   const isManual = recipe.platform === 'manual';
+  const isOwner  = !recipe.user_id || !currentUserId || recipe.user_id === currentUserId;
 
   return (
     <View style={styles.card}>
@@ -421,10 +433,19 @@ function RecipeCard({
           </DinText>
         </View>
 
-        {/* Delete — top-right */}
-        <TouchableOpacity onPress={onDelete} style={styles.deleteCorner} hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-          <DinText style={styles.deleteCornerText}>✕</DinText>
-        </TouchableOpacity>
+        {/* Delete — top-right (owner only) */}
+        {isOwner && (
+          <TouchableOpacity onPress={onDelete} style={styles.deleteCorner} hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+            <DinText style={styles.deleteCornerText}>✕</DinText>
+          </TouchableOpacity>
+        )}
+
+        {/* Partner badge — top-left */}
+        {!isOwner && partnerName && (
+          <View style={styles.partnerBadge}>
+            <DinText style={styles.partnerBadgeText}>from {partnerName}</DinText>
+          </View>
+        )}
       </View>
 
       {/* Content */}
@@ -986,6 +1007,16 @@ const styles = StyleSheet.create({
   },
   deleteCornerText: {
     fontSize: 12, color: '#fff', fontFamily: FontFamily.soraSemibold,
+  },
+  partnerBadge: {
+    position: 'absolute', top: 10, left: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 9, paddingVertical: 5,
+    borderRadius: BorderRadius.full,
+  },
+  partnerBadgeText: {
+    fontFamily: FontFamily.sora, fontSize: 10,
+    color: 'rgba(255,255,255,0.9)',
   },
 
   // Card content below thumbnail

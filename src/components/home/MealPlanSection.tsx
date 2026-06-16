@@ -29,6 +29,7 @@ import { CUISINES, type CuisineId } from '@hooks/useMealPlan';
 import { refreshSingleMeal } from '@services/mealPlanner';
 import type { MealPlan, DayPlan, SuggestedMeal } from '@services/mealPlanner';
 import type { InventoryItem } from '@db/database';
+import type { RecipeQueueItem } from '@hooks/useRecipeQueue';
 import { HindiRecipeSheet } from '@components/home/HindiRecipeSheet';
 
 const LIKED_KEY = 'liked_meals_v1';
@@ -46,12 +47,13 @@ interface Props {
   error: string | null;
   cuisine: CuisineId;
   inventory: InventoryItem[];
+  recipes?: RecipeQueueItem[];
   onCuisineChange: (id: CuisineId) => void;
   onRefresh: () => void;
   onUpdateMeal?: (dayIdx: number, mealIdx: number, newMeal: SuggestedMeal) => void;
 }
 
-export function MealPlanSection({ plan, loading, error, cuisine, inventory, onCuisineChange, onRefresh, onUpdateMeal }: Props) {
+export function MealPlanSection({ plan, loading, error, cuisine, inventory, recipes = [], onCuisineChange, onRefresh, onUpdateMeal }: Props) {
   const [activeDay, setActiveDay] = useState(0);
   const [likedMeals, setLikedMeals] = useState<Set<string>>(new Set());
 
@@ -146,6 +148,7 @@ export function MealPlanSection({ plan, loading, error, cuisine, inventory, onCu
           dayIndex={activeDay}
           cuisine={cuisine}
           inventory={inventory}
+          recipes={recipes}
           likedMeals={likedMeals}
           onToggleLike={toggleLike}
           onMealReplaced={(mealIdx, newMeal) => onUpdateMeal?.(activeDay, mealIdx, newMeal)}
@@ -158,12 +161,13 @@ export function MealPlanSection({ plan, loading, error, cuisine, inventory, onCu
 // ─── Day meals ───────────────────────────────────────────────
 
 function DayMeals({
-  day, dayIndex, cuisine, inventory, likedMeals, onToggleLike, onMealReplaced,
+  day, dayIndex, cuisine, inventory, recipes, likedMeals, onToggleLike, onMealReplaced,
 }: {
   day: DayPlan;
   dayIndex: number;
   cuisine: CuisineId;
   inventory: InventoryItem[];
+  recipes: RecipeQueueItem[];
   likedMeals: Set<string>;
   onToggleLike: (name: string) => void;
   onMealReplaced?: (mealIdx: number, newMeal: SuggestedMeal) => void;
@@ -189,6 +193,7 @@ function DayMeals({
         mealType: meals[idx].type,
         cuisine,
         exclude,
+        recipes,
       });
       setMeals((prev) => {
         const next = [...prev];
@@ -202,7 +207,7 @@ function DayMeals({
     } finally {
       setRefreshingIdx(null);
     }
-  }, [profile, inventory, cuisine, meals]);
+  }, [profile, inventory, cuisine, meals, recipes]);
 
   // Meals that need day-before prep
   const prepMeals = meals.filter((m) => m.prepNote && m.prepNote.trim().length > 0);

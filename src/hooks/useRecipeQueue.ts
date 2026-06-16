@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@lib/supabase';
 import { useAuth } from '@context/AuthContext';
+import { useCouple } from '@hooks/useCouple';
 
 export interface RecipeQueueItem {
   id: string;
+  user_id: string;
   url: string;
   title: string;
   thumbnail_url: string | null;
@@ -15,21 +17,27 @@ export interface RecipeQueueItem {
 
 export function useRecipeQueue() {
   const { user } = useAuth();
+  const { couple } = useCouple();
   const [recipes, setRecipes] = useState<RecipeQueueItem[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const partnerId = couple?.partner?.id ?? null;
 
   const fetch = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    let query = (supabase as any)
       .from('recipe_queue')
       .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false }) as { data: RecipeQueueItem[] | null };
+      .order('created_at', { ascending: false });
+    query = partnerId
+      ? query.in('user_id', [user.id, partnerId])
+      : query.eq('user_id', user.id);
+    const { data } = await query as { data: RecipeQueueItem[] | null };
     setRecipes(data ?? []);
     setLoading(false);
-  }, [user]);
+  }, [user, partnerId]);
 
   useEffect(() => { fetch(); }, [fetch]);
 

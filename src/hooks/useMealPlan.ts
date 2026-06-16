@@ -24,6 +24,8 @@ export const CUISINES = [
 export type CuisineId = typeof CUISINES[number]['id'];
 
 const CUISINE_PREF_KEY = 'meal_plan_cuisine_pref';
+const RECENT_MEALS_KEY_PREFIX = 'recent_meal_names_';
+const MAX_RECENT_MEALS = 24;
 
 // ─── Notification bus (solo mode) ────────────────────────────
 const cacheUpdateListeners = new Set<() => void>();
@@ -42,23 +44,30 @@ export async function clearMealPlanCache(userId: string): Promise<void> {
 
 export function useMealPlan() {
   const { user, profile } = useAuth();
-  const { couple } = useCouple();
+  const { couple, updateCuisinePref } = useCouple();
   const { items: inventory } = useInventory(couple?.id ?? null);
   const { recipes } = useRecipeQueue();
 
-  const [plan, setPlan]            = useState<MealPlan | null>(null);
-  const [loading, setLoading]      = useState(false);
-  const [error, setError]          = useState<string | null>(null);
-  const [cuisine, setCuisineState] = useState<CuisineId>('any');
+  const [plan, setPlan]                 = useState<MealPlan | null>(null);
+  const [loading, setLoading]           = useState(false);
+  const [error, setError]               = useState<string | null>(null);
+  const [soloCuisine, setSoloCuisine]   = useState<CuisineId>('any');
 
   const partnerProfile = couple?.partner ?? null;
   const isCouple       = !!couple?.id;
 
+  // Couples share a single cuisine setting (couples.cuisine_pref); solo users
+  // keep their own local preference in AsyncStorage.
+  const cuisine: CuisineId = isCouple
+    ? ((couple?.cuisine_pref as CuisineId) ?? 'any')
+    : soloCuisine;
+
   useEffect(() => {
+    if (isCouple) return;
     AsyncStorage.getItem(CUISINE_PREF_KEY)
-      .then((v) => { if (v) setCuisineState(v as CuisineId); })
+      .then((v) => { if (v) setSoloCuisine(v as CuisineId); })
       .catch(() => {});
-  }, []);
+  }, [isCouple]);
 
   const localCacheKey = `meal_plan_${user?.id}_${format(new Date(), 'yyyy-MM-dd')}_${cuisine}`;
 
@@ -116,6 +125,13 @@ export function useMealPlan() {
         if (raw) likedMeals = JSON.parse(raw) as string[];
       } catch {}
 
+      const recentMealsKey = `${RECENT_MEALS_KEY_PREFIX}${user.id}`;
+      let recentMeals: string[] = [];
+      try {
+        const raw = await AsyncStorage.getItem(recentMealsKey);
+        if (raw) recentMeals = JSON.parse(raw) as string[];
+      } catch {}
+
       const newPlan = await generateMealPlan({
         profile,
         partnerProfile,
@@ -123,9 +139,15 @@ export function useMealPlan() {
         recipes,
         cuisine,
         likedMeals,
+        excludeMeals: recentMeals,
       });
       setPlan(newPlan);
       await persistPlan(newPlan);
+
+      // Remember what was just suggested so the next "New ideas" doesn't repeat it
+      const newNames = newPlan.days.flatMap((d) => d.meals.map((m) => m.name));
+      const updatedRecent = [...newNames, ...recentMeals].slice(0, MAX_RECENT_MEALS);
+      await AsyncStorage.setItem(recentMealsKey, JSON.stringify(updatedRecent)).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to generate plan');
     } finally {
@@ -159,9 +181,10 @@ export function useMealPlan() {
           filter: `couple_id=eq.${couple.id}`,
         },
         (payload: any) => {
-          const row = payload.new as { plan: MealPlan; updated_by: string; cuisine_id: string } | null;
-          // Only update if the change came from the partner and matches current cuisine
-          if (row && row.updated_by !== user.id && row.cuisine_id === cuisine) {
+          const row = payload.new as { plan: MealPlan; updated_by: string } | null;
+          // Cuisine is shared at the couple level, so any partner-originated
+          // update applies to this device too.
+          if (row && row.updated_by !== user.id) {
             setPlan(row.plan);
             AsyncStorage.setItem(localCacheKey, JSON.stringify(row.plan)).catch(() => {});
           }
@@ -175,7 +198,11 @@ export function useMealPlan() {
   useEffect(() => { generate(false); }, [generate]);
 
   async function selectCuisine(id: CuisineId) {
-    setCuisineState(id);
+    if (isCouple) {
+      await updateCuisinePref(id);
+      return;
+    }
+    setSoloCuisine(id);
     await AsyncStorage.setItem(CUISINE_PREF_KEY, id).catch(() => {});
   }
 
@@ -197,6 +224,7 @@ export function useMealPlan() {
     plan, loading, error,
     cuisine, selectCuisine,
     inventory,
+    recipes,
     isCouple,
     partnerProfile,
     refresh: () => generate(true),
